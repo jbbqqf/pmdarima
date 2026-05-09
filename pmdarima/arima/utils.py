@@ -62,8 +62,11 @@ def nsdiffs(x, m, max_D=2, test='ocsb', **kwargs):
 
     Perform a test of seasonality for different levels of ``D`` to
     estimate the number of seasonal differences required to make a given time
-    series stationary. Will select the maximum value of ``D`` for which
-    the time series is judged seasonally stationary by the statistical test.
+    series stationary. Returns the smallest value of ``D`` (capped at
+    ``max_D``) for which the series is judged seasonally stationary by the
+    statistical test — ``D`` is incremented from 0 only as long as the test
+    still asks for more differencing. This matches R ``forecast::nsdiffs``
+    behaviour and is the standard convention to avoid over-differencing.
 
     Parameters
     ----------
@@ -87,9 +90,10 @@ def nsdiffs(x, m, max_D=2, test='ocsb', **kwargs):
     Returns
     -------
     D : int
-        The estimated seasonal differencing term. This is the maximum value
-        of ``D`` such that ``D <= max_D`` and the time series is judged
-        seasonally stationary. If the time series is constant, will return 0.
+        The estimated seasonal differencing term. This is the smallest value
+        of ``D`` (with ``0 <= D <= max_D``) at which the seasonality test
+        stops requiring further differencing. If the time series is
+        constant, will return 0.
     """
     if max_D <= 0:
         raise ValueError('max_D must be a positive integer')
@@ -130,8 +134,11 @@ def ndiffs(x, alpha=0.05, test='kpss', max_d=2, **kwargs):
 
     Perform a test of stationarity for different levels of ``d`` to
     estimate the number of differences required to make a given time
-    series stationary. Will select the maximum value of ``d`` for which
-    the time series is judged stationary by the statistical test.
+    series stationary. Returns the smallest value of ``d`` (capped at
+    ``max_d``) for which the series is judged stationary by the unit-root
+    test — ``d`` is incremented from 0 only as long as the test still asks
+    for more differencing. This matches R ``forecast::ndiffs`` behaviour and
+    is the standard convention to avoid over-differencing.
 
     Parameters
     ----------
@@ -154,9 +161,10 @@ def ndiffs(x, alpha=0.05, test='kpss', max_d=2, **kwargs):
     Returns
     -------
     d : int
-        The estimated differencing term. This is the maximum value of ``d``
-        such that ``d <= max_d`` and the time series is judged stationary.
-        If the time series is constant, will return 0.
+        The estimated differencing term. This is the smallest value of
+        ``d`` (with ``0 <= d <= max_d``) at which the unit-root test stops
+        requiring further differencing. If the time series is constant,
+        will return 0.
 
     References
     ----------
