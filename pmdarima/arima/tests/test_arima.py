@@ -797,9 +797,10 @@ def test_issue_469_simulate_raises_on_unfitted_model():
 def test_issue_469_simulate_validates_nsimulations():
     rng = np.random.RandomState(471)
     model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(rng.randn(50))
-    with pytest.raises(ValueError, match="nsimulations must be a positive int"):
+    msg = "nsimulations must be a positive int"
+    with pytest.raises(ValueError, match=msg):
         model.simulate(nsimulations=0)
-    with pytest.raises(ValueError, match="nsimulations must be a positive int"):
+    with pytest.raises(ValueError, match=msg):
         model.simulate(nsimulations=-3)
 
 
@@ -808,7 +809,9 @@ def test_issue_469_simulate_with_exog_X():
     y_local = rng.randn(80)
     X_train = rng.randn(80, 2)
     X_sim = rng.randn(15, 2)
-    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(y_local, X=X_train)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(
+        y_local, X=X_train
+    )
 
     sim = model.simulate(nsimulations=15, X=X_sim, random_state=0)
     assert sim.shape == (15,)
@@ -818,7 +821,9 @@ def test_issue_469_simulate_X_and_exog_alias_conflict_raises():
     rng = np.random.RandomState(473)
     model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(rng.randn(50))
     with pytest.raises(TypeError, match="both `X` and `exog`"):
-        model.simulate(nsimulations=10, X=rng.randn(10, 1), exog=rng.randn(10, 1))
+        model.simulate(
+            nsimulations=10, X=rng.randn(10, 1), exog=rng.randn(10, 1)
+        )
 
 
 def test_issue_469_simulate_repetitions_2d_shape():
