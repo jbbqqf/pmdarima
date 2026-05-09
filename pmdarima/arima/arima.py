@@ -43,6 +43,36 @@ _CHECK_ARRAY_FINITE_PARAM = (
 )
 
 
+def _resolve_legacy_exog_kwarg(method_name, X, kwargs):
+    """Issue #530: ``ARIMA.fit`` / ``predict`` / ``update`` historically
+    accepted ``exog`` as the name of the exogenous-features argument. In
+    pmdarima 2.0 it was renamed to ``X``, but the methods still take
+    ``**fit_args`` / ``**kwargs`` for forwarding to statsmodels, so a
+    caller passing ``exog=foo`` had it silently swallowed and dropped —
+    statsmodels' fit signature does not take ``exog`` either, so the
+    intended exogenous matrix was never used and predictions silently
+    came out wrong. Pop ``exog`` here, raise on conflict with ``X``,
+    emit a ``DeprecationWarning``, and return the resolved ``X`` so the
+    caller proceeds as if the user had passed ``X``."""
+    if "exog" not in kwargs:
+        return X
+    legacy = kwargs.pop("exog")
+    if X is not None:
+        raise TypeError(
+            f"{method_name}() got both `X` and the deprecated alias `exog`; "
+            f"pass only `X` (the `exog` keyword was renamed in pmdarima 2.0)."
+        )
+    warnings.warn(
+        f"The `exog` keyword to {method_name}() was renamed to `X` in "
+        f"pmdarima 2.0. The legacy name still works for now but is "
+        f"silently swallowed when passed via **kwargs in older builds; "
+        f"please update your call to use `X=...` instead.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return legacy
+
+
 def ARMAtoMA(ar, ma, max_deg):
     r"""
     Convert ARMA coefficients to infinite MA coefficients.
@@ -570,6 +600,10 @@ class ARIMA(BaseARIMA):
         **fit_args : dict or kwargs
             Any keyword arguments to pass to the statsmodels ARIMA fit.
         """
+        # #530: catch callers still passing the pre-2.0 `exog` kwarg before
+        # it gets swallowed by **fit_args (statsmodels.fit doesn't take
+        # `exog` either, so it would silently disappear without effect).
+        X = _resolve_legacy_exog_kwarg("fit", X, fit_args)
         y = check_endog(y, dtype=DTYPE, preserve_series=True)
         n_samples = y.shape[0]
 
@@ -703,6 +737,10 @@ class ARIMA(BaseARIMA):
         """
         check_is_fitted(self, 'arima_res_')
 
+        # #530: catch the pre-2.0 `exog` kwarg before it gets swallowed by
+        # **kwargs and silently dropped by the statsmodels predict() call.
+        X = _resolve_legacy_exog_kwarg("predict_in_sample", X, kwargs)
+
         # issue #499: support prediction with non-integer start/end indices
         # issue #286: we can't produce valid preds for start < diff value
         # we can only do the validation for issue 286 if `start` is an int
@@ -750,7 +788,7 @@ class ARIMA(BaseARIMA):
                 X=None,
                 return_conf_int=False,
                 alpha=0.05,
-                **kwargs):  # TODO: remove kwargs after exog disappears
+                **kwargs):  # kwargs retained for legacy `exog=`; see #530
         """Forecast future values
 
         Generate predictions (forecasts) ``n_periods`` in the future.
@@ -787,6 +825,11 @@ class ARIMA(BaseARIMA):
         check_is_fitted(self, 'arima_res_')
         if not isinstance(n_periods, int):
             raise TypeError("n_periods must be an int")
+
+        # #530: catch the pre-2.0 `exog` kwarg before it falls into kwargs
+        # and gets silently dropped (predict() doesn't forward kwargs to
+        # statsmodels, so the value would just be ignored).
+        X = _resolve_legacy_exog_kwarg("predict", X, kwargs)
 
         # if we fit with exog, make sure one was passed:
         X = self._check_exog(X)  # type: np.ndarray
@@ -927,6 +970,11 @@ class ARIMA(BaseARIMA):
         """
         check_is_fitted(self, 'arima_res_')
         model_res = self.arima_res_
+
+        # #530: catch the pre-2.0 `exog` kwarg before it gets folded into
+        # **kwargs and forwarded to _fit, where statsmodels would silently
+        # drop it.
+        X = _resolve_legacy_exog_kwarg("update", X, kwargs)
 
         # Allow updating with a scalar if the user is just adding a single
         # sample.

@@ -759,3 +759,69 @@ def test_ARMAtoMA():
     equivalent_ma = ARMAtoMA(ar, ma, max_deg)
     ema_expected = np.array([0.9000, 1.3500, 1.3150, 1.5175, 1.5477, 1.6843])
     assert_array_almost_equal(equivalent_ma, ema_expected, decimal=4)
+
+
+# Issue #530 — pre-2.0 `exog` kwarg is silently swallowed by **kwargs.
+# These tests pin the new behaviour: the legacy name still works (so user
+# code from < 2.0 doesn't silently produce wrong predictions) but emits a
+# DeprecationWarning, and combining `X=` with `exog=` is a TypeError.
+def test_issue_530_fit_legacy_exog_kwarg_emits_deprecation():
+    rng = np.random.RandomState(530)
+    y_local = rng.randn(80)
+    X_local = rng.randn(80, 2)
+
+    # AFTER (this PR): fit(y, exog=X) succeeds, with a DeprecationWarning,
+    # and the model behaves like fit(y, X=X). On master the kwarg was
+    # silently dropped, so the model would behave like fit(y) — different
+    # parameters and different predictions, but no error or warning.
+    model_legacy = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    with pytest.warns(DeprecationWarning, match="`exog` keyword"):
+        model_legacy.fit(y_local, exog=X_local)
+    assert model_legacy.fit_with_exog_ is True
+
+    model_new = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    model_new.fit(y_local, X=X_local)
+    assert_array_almost_equal(model_legacy.params(), model_new.params())
+
+
+def test_issue_530_fit_both_X_and_exog_is_error():
+    rng = np.random.RandomState(531)
+    y_local = rng.randn(40)
+    X_local = rng.randn(40, 1)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    # Defensive: passing both names is ambiguous and should fail loudly.
+    with pytest.raises(TypeError, match="both `X` and the deprecated alias"):
+        model.fit(y_local, X=X_local, exog=X_local)
+
+
+def test_issue_530_predict_legacy_exog_kwarg_emits_deprecation():
+    rng = np.random.RandomState(532)
+    y_local = rng.randn(80)
+    X_train = rng.randn(80, 2)
+    X_test = rng.randn(5, 2)
+
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    model.fit(y_local, X=X_train)
+
+    # AFTER: predict(n_periods, exog=X) warns and uses the value as X.
+    with pytest.warns(DeprecationWarning, match="`exog` keyword"):
+        preds_legacy = model.predict(n_periods=5, exog=X_test)
+    preds_new = model.predict(n_periods=5, X=X_test)
+    assert_array_almost_equal(preds_legacy, preds_new)
+
+
+def test_issue_530_update_legacy_exog_kwarg_emits_deprecation():
+    rng = np.random.RandomState(533)
+    y_train = rng.randn(80)
+    X_train = rng.randn(80, 2)
+    y_extra = rng.randn(10)
+    X_extra = rng.randn(10, 2)
+
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    model.fit(y_train, X=X_train)
+    with pytest.warns(DeprecationWarning, match="`exog` keyword"):
+        model.update(y_extra, exog=X_extra, maxiter=1)
+    # Successful update bumps nobs; if exog had been silently dropped, the
+    # update would have raised in _check_exog because the model was fit
+    # with X but called without one.
+    assert model.arima_res_.nobs == 90
