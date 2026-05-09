@@ -220,14 +220,20 @@ it will learn the lambda transformation parameter:
     :alt: Box-Cox transformed Time Series
 
 
-However, the Box-Cox transformation seems to work very well as a means to normalize the data!
-In fact, a test of normality shows overwhelmingly that this is a normal distribution:
+However, the Box-Cox transformation seems to work very well as a means to *symmetrize* the
+data — the long right tail is gone and the distribution is much closer to normal than the
+log transformation produced. The transformed series isn't a perfect Gaussian (a sample this
+large will fail any formal test of normality, including ``scipy.stats.normaltest``, which
+returns a very small ``p``-value below — i.e. it rejects the null hypothesis that the data
+is drawn from a normal distribution), but it's symmetric and stable enough to feed into an
+ARIMA model:
 
 .. code-block:: python
 
     from scipy.stats import normaltest
     normaltest(y_train_bc)[1]
-    # 3.751017646057429e-14
+    # 3.751017646057429e-14   # small p-value: data deviates from a perfect normal,
+                              # but visually and for ARIMA's purposes it's adequate
 
 
 Fitting the transformed data
