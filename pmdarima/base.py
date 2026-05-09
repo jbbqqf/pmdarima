@@ -55,7 +55,10 @@ class BaseARIMA(BaseEstimator, metaclass=ABCMeta):
         # most callers (and the existing ARIMA/AutoARIMA tests).
         X_fit, X_pred = X, X
         if X is not None:
-            n_train = len(y) if hasattr(y, "__len__") else getattr(y, "shape", (0,))[0]
+            n_train = (
+                len(y) if hasattr(y, "__len__")
+                else getattr(y, "shape", (0,))[0]
+            )
             expected = n_train + n_periods
             if getattr(X, "shape", (0,))[0] != expected:
                 raise ValueError(
