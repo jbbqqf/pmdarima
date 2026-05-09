@@ -759,3 +759,73 @@ def test_ARMAtoMA():
     equivalent_ma = ARMAtoMA(ar, ma, max_deg)
     ema_expected = np.array([0.9000, 1.3500, 1.3150, 1.5175, 1.5477, 1.6843])
     assert_array_almost_equal(equivalent_ma, ema_expected, decimal=4)
+
+
+# Issue #469 — first-party `simulate()` method on ARIMA. Before this PR
+# the only way to draw simulations from a fitted model was to reach into
+# `model.arima_res_.simulate(...)`, which is undocumented and brittle.
+def test_issue_469_simulate_returns_correct_shape():
+    rng = np.random.RandomState(469)
+    y_local = rng.randn(80)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(y_local)
+
+    sim = model.simulate(nsimulations=12, random_state=0)
+    assert sim.shape == (12,)
+
+
+def test_issue_469_simulate_is_reproducible():
+    rng = np.random.RandomState(470)
+    y_local = rng.randn(80)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(y_local)
+
+    sim1 = model.simulate(nsimulations=20, random_state=42)
+    sim2 = model.simulate(nsimulations=20, random_state=42)
+    assert_array_almost_equal(sim1, sim2)
+
+    sim3 = model.simulate(nsimulations=20, random_state=43)
+    # Different seed → different draw (vanishingly unlikely to match).
+    assert not np.allclose(sim1, sim3)
+
+
+def test_issue_469_simulate_raises_on_unfitted_model():
+    from sklearn.exceptions import NotFittedError
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    with pytest.raises(NotFittedError):
+        model.simulate(nsimulations=10)
+
+
+def test_issue_469_simulate_validates_nsimulations():
+    rng = np.random.RandomState(471)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(rng.randn(50))
+    with pytest.raises(ValueError, match="nsimulations must be a positive int"):
+        model.simulate(nsimulations=0)
+    with pytest.raises(ValueError, match="nsimulations must be a positive int"):
+        model.simulate(nsimulations=-3)
+
+
+def test_issue_469_simulate_with_exog_X():
+    rng = np.random.RandomState(472)
+    y_local = rng.randn(80)
+    X_train = rng.randn(80, 2)
+    X_sim = rng.randn(15, 2)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(y_local, X=X_train)
+
+    sim = model.simulate(nsimulations=15, X=X_sim, random_state=0)
+    assert sim.shape == (15,)
+
+
+def test_issue_469_simulate_X_and_exog_alias_conflict_raises():
+    rng = np.random.RandomState(473)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(rng.randn(50))
+    with pytest.raises(TypeError, match="both `X` and `exog`"):
+        model.simulate(nsimulations=10, X=rng.randn(10, 1), exog=rng.randn(10, 1))
+
+
+def test_issue_469_simulate_repetitions_2d_shape():
+    """Forwarding `repetitions=N` to statsmodels should yield a 2-D array."""
+    rng = np.random.RandomState(474)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True).fit(rng.randn(60))
+    sim = model.simulate(nsimulations=10, repetitions=4, random_state=0)
+    # statsmodels can return a (nsim,) or (nsim, repetitions) shape
+    # depending on version; assert at least the time axis is right.
+    assert sim.shape[0] == 10

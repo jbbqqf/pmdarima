@@ -817,6 +817,83 @@ class ARIMA(BaseARIMA):
             )
         return f
 
+    def simulate(self, nsimulations, X=None, random_state=None, **kwargs):
+        """Simulate a new time series from the fitted ARIMA model.
+
+        Generate one or more random samples from the fitted state-space
+        model. This is a thin wrapper around statsmodels'
+        ``SARIMAXResults.simulate`` that uses pmdarima's ``X`` naming for
+        the exogenous matrix and validates that the model has been fit.
+        See the underlying `statsmodels documentation
+        <https://www.statsmodels.org/stable/generated/statsmodels.tsa.statespace.sarimax.SARIMAXResults.simulate.html>`_
+        for the full list of options forwarded via ``**kwargs``
+        (``measurement_shocks``, ``state_shocks``, ``initial_state``,
+        ``anchor``, ``repetitions``, ...).
+
+        Parameters
+        ----------
+        nsimulations : int
+            The number of observations to simulate.
+
+        X : array-like, shape=[nsimulations, n_vars], optional (default=None)
+            Optional exogenous variables for the simulation horizon. Must
+            be provided if the model was fit with exogenous features. This
+            is forwarded as ``exog`` to the underlying statsmodels call.
+
+        random_state : int, np.random.Generator, np.random.RandomState, or None
+            Forwarded to statsmodels for reproducible draws.
+
+        **kwargs
+            Additional keyword arguments forwarded to
+            ``SARIMAXResults.simulate`` (e.g. ``anchor``, ``repetitions``,
+            ``initial_state``).
+
+        Returns
+        -------
+        simulated : ndarray
+            The simulated time series. Shape is ``(nsimulations,)`` for a
+            single draw or ``(nsimulations, repetitions)`` if
+            ``repetitions`` was passed.
+
+        Examples
+        --------
+        >>> from pmdarima.arima import ARIMA
+        >>> from pmdarima.datasets import load_wineind
+        >>> y = load_wineind()
+        >>> model = ARIMA(order=(1, 1, 1), suppress_warnings=True).fit(y)
+        >>> simulated = model.simulate(nsimulations=12, random_state=0)
+        >>> simulated.shape
+        (12,)
+        """
+        # #469: first-party wrapper so callers don't have to reach into
+        # `.arima_res_` (which is undocumented and would fail on a
+        # not-yet-fitted ARIMA without a clear error).
+        check_is_fitted(self, 'arima_res_')
+        if not isinstance(nsimulations, int) or nsimulations <= 0:
+            raise ValueError(
+                f"nsimulations must be a positive int, got {nsimulations!r}"
+            )
+
+        # #530-style guard: catch the legacy `exog` kwarg before forwarding.
+        # We accept either `X=...` (pmdarima style) or `exog=...` (statsmodels
+        # passthrough); raise on conflict.
+        if "exog" in kwargs:
+            if X is not None:
+                raise TypeError(
+                    "simulate() got both `X` and `exog`; pass only `X`."
+                )
+            X = kwargs.pop("exog")
+
+        if X is not None:
+            X = check_exog(X, force_all_finite=True, dtype=DTYPE)
+
+        return self.arima_res_.simulate(
+            nsimulations=nsimulations,
+            exog=X,
+            random_state=random_state,
+            **kwargs,
+        )
+
     def __getstate__(self):
         """I am being pickled..."""
 
