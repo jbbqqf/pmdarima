@@ -759,3 +759,49 @@ def test_ARMAtoMA():
     equivalent_ma = ARMAtoMA(ar, ma, max_deg)
     ema_expected = np.array([0.9000, 1.3500, 1.3150, 1.5175, 1.5477, 1.6843])
     assert_array_almost_equal(equivalent_ma, ema_expected, decimal=4)
+
+
+# Issue #514 — fit_predict used to pass the same X to fit() and predict(),
+# so any caller supplying exogenous features hit
+# `ValueError: X array dims (n_rows) != n_periods` because predict()
+# required X.shape[0] == n_periods while fit() required X.shape[0] == len(y).
+# After the fix, the caller passes one X covering the training window plus
+# the forecast horizon, fit_predict splits it, and the call succeeds.
+def test_issue_514_fit_predict_with_X_splits_train_and_forecast():
+    rng = np.random.RandomState(514)
+    y_local = rng.randn(60)
+    n_periods = 5
+    # Combined X covering training (60 rows) + forecast horizon (5 rows).
+    X_local = rng.randn(60 + n_periods, 2)
+
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    preds = model.fit_predict(y_local, X=X_local, n_periods=n_periods)
+    assert preds.shape == (n_periods,)
+
+    # The split must match what the user gets from fitting + predicting
+    # manually. Same RNG seed → same MLE start, same fit, same predictions.
+    model2 = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    model2.fit(y_local, X=X_local[:60])
+    preds2 = model2.predict(n_periods=n_periods, X=X_local[60:])
+    assert_array_almost_equal(preds, preds2)
+
+
+def test_issue_514_fit_predict_X_wrong_length_raises_clear_error():
+    rng = np.random.RandomState(515)
+    y_local = rng.randn(60)
+    # Wrong: X covers only the training window, not the forecast horizon.
+    X_local = rng.randn(60, 2)
+
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    with pytest.raises(ValueError, match="must cover both the training"):
+        model.fit_predict(y_local, X=X_local, n_periods=5)
+
+
+def test_issue_514_fit_predict_no_X_still_works():
+    """Pure-endogenous fit_predict was the only path that worked before
+    the fix; this guards that the no-X short-circuit didn't regress."""
+    rng = np.random.RandomState(516)
+    y_local = rng.randn(40)
+    model = ARIMA(order=(1, 0, 0), suppress_warnings=True)
+    preds = model.fit_predict(y_local, n_periods=7)
+    assert preds.shape == (7,)

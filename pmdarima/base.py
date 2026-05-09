@@ -32,11 +32,13 @@ class BaseARIMA(BaseEstimator, metaclass=ABCMeta):
             ``np.nan`` or ``np.inf`` values.
 
         X : array-like, shape=[n_obs, n_vars], optional (default=None)
-            An optional 2-d array of exogenous variables. If provided, these
-            variables are used as additional features in the regression
-            operation. This should not include a constant or trend. Note that
-            if an ``ARIMA`` is fit on exogenous features, it must be provided
-            exogenous features for making predictions.
+            An optional 2-d array of exogenous variables. If provided, ``X``
+            must contain rows for **both** the training observations and
+            the ``n_periods`` future periods to forecast — i.e.
+            ``X.shape[0] == len(y) + n_periods``. ``fit_predict`` will use
+            the first ``len(y)`` rows for fitting and the last
+            ``n_periods`` rows for forecasting. This should not include a
+            constant or trend.
 
         n_periods : int, optional (default=10)
             The number of periods in the future to forecast.
@@ -44,10 +46,41 @@ class BaseARIMA(BaseEstimator, metaclass=ABCMeta):
         fit_args : dict or kwargs, optional (default=None)
             Any keyword args to pass to the fit method.
         """
-        self.fit(y, X, **fit_args)
+        # Issue #514: previously the SAME `X` was passed to both fit() and
+        # predict(), which raised inside predict because predict requires
+        # X.shape[0] == n_periods while fit requires X.shape[0] == len(y).
+        # Require the caller to provide one combined X covering both the
+        # training window and the forecast horizon, and split it here. The
+        # `X is None` short-circuit preserves the no-exog code path used by
+        # most callers (and the existing ARIMA/AutoARIMA tests).
+        X_fit, X_pred = X, X
+        if X is not None:
+            n_train = len(y) if hasattr(y, "__len__") else getattr(y, "shape", (0,))[0]
+            expected = n_train + n_periods
+            if getattr(X, "shape", (0,))[0] != expected:
+                raise ValueError(
+                    f"When X is provided to fit_predict, it must cover both "
+                    f"the training samples and the forecast horizon: "
+                    f"expected X.shape[0] == len(y) + n_periods "
+                    f"({n_train} + {n_periods} = {expected}), got "
+                    f"{getattr(X, 'shape', (0,))[0]}. If you only have X for "
+                    f"the training window, call fit(y, X) and predict("
+                    f"n_periods, X=X_future) separately."
+                )
+            # Use iloc when available (pandas) so the index is preserved on
+            # both halves; numpy slicing falls back to the second branch.
+            if hasattr(X, "iloc"):
+                X_fit = X.iloc[:n_train]
+                X_pred = X.iloc[n_train:]
+            else:
+                X_fit = X[:n_train]
+                X_pred = X[n_train:]
 
-        # TODO: remove kwargs from call
-        return self.predict(n_periods=n_periods, X=X, **fit_args)
+        self.fit(y, X_fit, **fit_args)
+        # fit_args is intentionally NOT forwarded to predict; predict's
+        # signature only forwards extras to statsmodels' get_prediction, and
+        # most fit_args (e.g. method=, start_params=) would error there.
+        return self.predict(n_periods=n_periods, X=X_pred)
 
     # TODO: remove kwargs from all of these
 
